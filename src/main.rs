@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use a2::DefaultNotificationBuilder;
+use a2::{DefaultNotificationBuilder, NotificationBuilder, NotificationOptions};
+use a2::request::payload::APSAlert::Default;
 use robotevents::client;
 use robotevents::query::{DivisionMatchesQuery, EventsQuery, PaginatedQuery, TeamSkillsQuery, TeamsQuery};
 use robotevents::schema::Division;
@@ -10,11 +11,15 @@ use serde::{Deserialize, Serialize};
 use tokio::join;
 use tokio::time::sleep_until;
 
+// add a constant for the bundle id
+const BUNDLE_ID: &str = "net.dickhans.EchoPulse";
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DeviceSubscription {
     competition_id: u32,
     division_id: u32,
     device_token: String,
+    watch_team: u32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -48,7 +53,7 @@ impl CompetitionDivisionPair {
 
 #[derive(Debug, Clone)]
 struct StateStore {
-    subscriptions: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<String>>>>,
+    subscriptions: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<(String, u32)>>>>,
     matches: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<robotevents::schema::Match>>>>,
 }
 
@@ -64,25 +69,30 @@ impl StateStore {
         println!("Adding subscription for competition {:?} and device {}", CompetitionDivisionPair::from_device(&device), device.device_token);
         let mut subscriptions = self.subscriptions.write().await;
         let entry = subscriptions.entry(CompetitionDivisionPair::from_device(&device)).or_insert(Vec::new());
-        entry.push(device.device_token);
+        entry.push((device.device_token, device.watch_team));
     }
 
     async fn change_subscription_from_device(&self, device: &DeviceSubscriptionChangeRequest) {
-        // find the old subscription and remove it, storing where it was
+        // find the old subscription and remove it, storing where it was and what team was associated with it
         let mut subscriptions = self.subscriptions.write().await;
+
         let mut old_competition_division = None;
+        let mut old_watch_team = None;
 
         for (competition_division, devices) in subscriptions.iter_mut() {
-            if devices.contains(&device.old_device_token) {
-                devices.retain(|x| x != &device.old_device_token);
-                old_competition_division = Some(competition_division.clone());
+            for (device_token, watch_team) in devices.iter_mut() {
+                if device_token == &device.old_device_token {
+                    old_competition_division = Some(competition_division.clone());
+                    old_watch_team = Some(*watch_team);
+                    devices.retain(|(token, _)| token != &device.old_device_token);
+                    break;
+                }
             }
         }
 
-        // add the new subscription
-        if let Some(competition_division) = old_competition_division {
-            let entry = subscriptions.entry(competition_division).or_insert(Vec::new());
-            entry.push(device.new_device_token.clone());
+        if let Some(old_competition_division) = old_competition_division {
+            let mut new_subscriptions = subscriptions.entry(old_competition_division).or_insert(Vec::new());
+            new_subscriptions.push((device.new_device_token.clone(), old_watch_team.unwrap()));
         }
     }
 }
@@ -162,6 +172,15 @@ async fn main() {
         .and_then(change_device);
 
     let mut builder = DefaultNotificationBuilder::new();
+    let payload = "test";
+
+    let mut notificationBuilder = NotificationOptions{
+        apns_priority: Some(Priority::Normal),
+        ..Default::default()
+    };
+
+
+    builder.build("device-token-from-the-user", Default::default());
 
     join!(
         warp::serve(add_items.or(change_device))
