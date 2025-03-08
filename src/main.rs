@@ -1,15 +1,14 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use a2::{DefaultNotificationBuilder, NotificationBuilder, NotificationOptions};
-use a2::request::payload::APSAlert::Default;
+mod competitionAttributes;
+
 use robotevents::client;
-use robotevents::query::{DivisionMatchesQuery, EventsQuery, PaginatedQuery, TeamSkillsQuery, TeamsQuery};
-use robotevents::schema::Division;
-use tokio::sync::RwLock;
-use warp::{http, Filter};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::default::Default;
+use std::sync::Arc;
 use tokio::join;
+use tokio::sync::RwLock;
 use tokio::time::sleep_until;
+use warp::{http, Filter};
 
 // add a constant for the bundle id
 const BUNDLE_ID: &str = "net.dickhans.EchoPulse";
@@ -134,14 +133,15 @@ fn json_body_change_device() -> impl Filter<Extract = (DeviceSubscriptionChangeR
 }
 
 async fn poll(state_store: StateStore) {
-    loop {
-        sleep_until(tokio::time::Instant::now() + tokio::time::Duration::from_secs(10)).await;
 
+    loop {
         // just print information about each subscription
         let subscriptions = state_store.subscriptions.read().await;
         for (competition_id, devices) in subscriptions.iter() {
             println!("Competition {:?}: {:?}", competition_id, devices);
         }
+
+        sleep_until(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3)).await;
     }
 }
 
@@ -170,17 +170,6 @@ async fn main() {
         .and(json_body_change_device())
         .and(store_filter.clone())
         .and_then(change_device);
-
-    let mut builder = DefaultNotificationBuilder::new();
-    let payload = "test";
-
-    let mut notificationBuilder = NotificationOptions{
-        apns_priority: Some(Priority::Normal),
-        ..Default::default()
-    };
-
-
-    builder.build("device-token-from-the-user", Default::default());
 
     join!(
         warp::serve(add_items.or(change_device))
