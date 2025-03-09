@@ -126,8 +126,6 @@ impl LiveActivityClient {
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_string(payload)?))?;
 
-        println!("Sending request: {:?}", req);
-
         let res = self.client.request(req).await?;
 
         if !res.status().is_success() {
@@ -178,23 +176,23 @@ fn create_match_content_state(match_data: &Value, team_id: u32) -> Value {
 
 pub async fn test_live_activity(client: &mut LiveActivityClient) -> Result<(), Box<dyn std::error::Error>> {
     // Device token from your iOS app
-    let device_token = "8042d3c477ccd4fe6b9445c5de674c4a786ce8823d1ae7ddd5196bf5f746037158522a5c7ce347ab6596fd25ab7fb1120a114b0a8c7b77bb4ed80f16289dc5b9c69e71c52cca4e275e53801434b30802";
+    let device_token = "80b12b4212dc776f8429d22ec68e58e40d341c9242e74bf89e4939549382137e5d6d89c512fa1efcceaef559768b7d12f69bf618d570d7cc0b2de84fc6c2266017a97d3a518fca5160370fc188dbe139";
 
     // Create test match data
     let test_red_alliance = Alliance {
-        team1: "Red Team 1".to_string(),
-        team2: Some("Red Team 2".to_string()),
+        team1: "R1".to_string(),
+        team2: Some("R2".to_string()),
         score: Some(0)
     };
 
     let test_blue_alliance = Alliance {
-        team1: "Blue Team 1".to_string(),
-        team2: Some("Blue Team 2".to_string()),
+        team1: "B1".to_string(),
+        team2: Some("B2".to_string()),
         score: Some(0)
     };
 
     let next_match = DisplayMatch {
-        name: "Qualification 5".to_string(),
+        name: "Q5".to_string(),
         scheduled: Some(chrono::Utc::now() + chrono::Duration::minutes(15)),
         start_time: None,
         red_alliance: test_red_alliance.clone(),
@@ -216,8 +214,6 @@ pub async fn test_live_activity(client: &mut LiveActivityClient) -> Result<(), B
             "content-state": content_state
         }
     });
-
-    println!("Sending start notification, payload: {}", start_payload.to_string());
 
     client.send_live_activity_notification(
         device_token,

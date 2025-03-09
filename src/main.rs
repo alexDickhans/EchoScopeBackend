@@ -70,8 +70,6 @@ impl StateStore {
             BUNDLE_ID
         )?;
 
-        println!("Created APNS client, current authentication token: {}", apns_client.get_token().unwrap_or("None".to_string()));
-
         Ok(Self {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             matches: Arc::new(RwLock::new(HashMap::new())),
