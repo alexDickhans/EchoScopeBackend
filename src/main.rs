@@ -79,6 +79,12 @@ impl StateStore {
         })
     }
 
+    async fn test_push_notifs(&self) {
+        // use test method in liveActivityApns
+        let mut apns_client = self.apns_client.write().await;
+        liveActivityApns::test_live_activity(&mut *apns_client).await.unwrap()
+    }
+
     async fn add_subscription_from_device(&self, device: DeviceSubscription) {
         println!("Adding subscription for competition {:?} and device {}", CompetitionDivisionPair::from_device(&device), device.device_token);
         let mut subscriptions = self.subscriptions.write().await;
@@ -171,6 +177,8 @@ async fn main() {
     let store = StateStore::new().unwrap();
     let cloned_store = store.clone();
     let store_filter = warp::any().map(move || cloned_store.clone());
+
+    store.test_push_notifs().await;
 
     let add_items = warp::post()
         .and(warp::path("v1"))

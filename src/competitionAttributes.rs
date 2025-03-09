@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use robotevents::schema::{AllianceColor, Match};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAttributesContentState {
     pub last_match: Option<DisplayMatch>,
@@ -113,7 +113,7 @@ fn datetime_from_string(date_str: &str) -> Option<DateTime<Utc>> {
     None
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayMatch {
     pub name: String,
@@ -123,7 +123,7 @@ pub struct DisplayMatch {
     pub blue_alliance: Alliance,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Alliance {
     pub team1: String,

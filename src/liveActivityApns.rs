@@ -1,11 +1,12 @@
 use hyper::{Body, Client, Method, Request};
-use hyper_tls::HttpsConnector;
+use hyper_rustls::{HttpsConnector, HttpsConnectorBuilder};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::error::Error;
 use std::fs;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use crate::competitionAttributes::{Alliance, CompetitionAttributesContentState, DisplayMatch};
 
 pub enum LiveActivityAction {
     Start,
@@ -38,8 +39,16 @@ impl LiveActivityClient {
         bundle_id: &str,
     ) -> Result<Self, Box<dyn Error>> {
         let private_key = fs::read(key_path)?;
-        let https = HttpsConnector::new();
-        let client = Client::builder().build::<_, Body>(https);
+
+        let https = HttpsConnectorBuilder::new()
+            .with_native_roots()
+            .https_only()
+            .enable_http2()
+            .build();
+
+        let client = Client::builder()
+            .http2_only(true)
+            .build::<_, Body>(https);
 
         Ok(LiveActivityClient {
             client,
@@ -97,19 +106,11 @@ impl LiveActivityClient {
         &mut self,
         device_token: &str,
         payload: &Value,
-        action: LiveActivityAction,
     ) -> Result<(), Box<dyn Error>> {
         let token = self.get_token()?;
 
-        // Determine push type based on the activity action
-        let push_type = match action {
-            LiveActivityAction::Start => "activity",
-            LiveActivityAction::Update => "activity.update",
-            LiveActivityAction::End => "activity.end",
-        };
-
         // Create the URI
-        let uri = format!("https://api.push.apple.com/3/device/{}", device_token);
+        let uri = format!("https://api.sandbox.push.apple.com/3/device/{}", device_token);
 
         // Build the request
         let req = Request::builder()
@@ -118,12 +119,14 @@ impl LiveActivityClient {
             .header("authorization", format!("bearer {}", token))
             .header(
                 "apns-topic",
-                format!("{}.push-type.{}", self.bundle_id, push_type),
+                format!("{}.push-type.liveactivity", self.bundle_id),
             )
-            .header("apns-push-type", push_type)
+            .header("apns-push-type", "liveactivity")
             .header("apns-priority", "10")
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_string(payload)?))?;
+
+        println!("Sending request: {:?}", req);
 
         let res = self.client.request(req).await?;
 
@@ -134,29 +137,6 @@ impl LiveActivityClient {
         }
 
         Ok(())
-    }
-
-    // Helper methods for Live Activity operations
-    pub async fn start_match_activity(
-        &mut self,
-        device_token: &str,
-        match_info: &Value,
-        team_id: u32,
-    ) -> Result<(), Box<dyn Error>> {
-        let content_state = create_match_content_state(match_info, team_id);
-
-        let payload = json!({
-            "aps": {
-                "content-state": content_state,
-                "timestamp": SystemTime::now()
-                    .duration_since(UNIX_EPOCH)?
-                    .as_secs(),
-                "event": "start"
-            }
-        });
-
-        self.send_live_activity_notification(device_token, &payload, LiveActivityAction::Start)
-            .await
     }
 
     pub async fn update_match_activity(
@@ -177,39 +157,7 @@ impl LiveActivityClient {
             }
         });
 
-        self.send_live_activity_notification(device_token, &payload, LiveActivityAction::Update)
-            .await
-    }
-
-    pub async fn end_match_activity(
-        &mut self,
-        device_token: &str,
-        match_info: &Value,
-        team_id: u32,
-        dismissal_delay: Option<u64>,
-    ) -> Result<(), Box<dyn Error>> {
-        let content_state = create_match_content_state(match_info, team_id);
-
-        let mut aps = json!({
-            "content-state": content_state,
-            "timestamp": SystemTime::now()
-                .duration_since(UNIX_EPOCH)?
-                .as_secs(),
-            "event": "end"
-        });
-
-        // Add dismissal date if provided (seconds to keep notification after ending)
-        if let Some(delay) = dismissal_delay {
-            let dismissal = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() + delay;
-
-            aps.as_object_mut()
-                .unwrap()
-                .insert("dismissal-date".to_string(), json!(dismissal));
-        }
-
-        let payload = json!({ "aps": aps });
-
-        self.send_live_activity_notification(device_token, &payload, LiveActivityAction::End)
+        self.send_live_activity_notification(device_token, &payload)
             .await
     }
 }
@@ -226,4 +174,58 @@ fn create_match_content_state(match_data: &Value, team_id: u32) -> Value {
         "matchStatus": match_data.get("status").unwrap_or(&json!("unknown")),
         "scheduledTime": match_data.get("scheduled").unwrap_or(&json!(0))
     })
+}
+
+pub async fn test_live_activity(client: &mut LiveActivityClient) -> Result<(), Box<dyn std::error::Error>> {
+    // Device token from your iOS app
+    let device_token = "8042d3c477ccd4fe6b9445c5de674c4a786ce8823d1ae7ddd5196bf5f746037158522a5c7ce347ab6596fd25ab7fb1120a114b0a8c7b77bb4ed80f16289dc5b9c69e71c52cca4e275e53801434b30802";
+
+    // Create test match data
+    let test_red_alliance = Alliance {
+        team1: "Red Team 1".to_string(),
+        team2: Some("Red Team 2".to_string()),
+        score: Some(0)
+    };
+
+    let test_blue_alliance = Alliance {
+        team1: "Blue Team 1".to_string(),
+        team2: Some("Blue Team 2".to_string()),
+        score: Some(0)
+    };
+
+    let next_match = DisplayMatch {
+        name: "Qualification 5".to_string(),
+        scheduled: Some(chrono::Utc::now() + chrono::Duration::minutes(15)),
+        start_time: None,
+        red_alliance: test_red_alliance.clone(),
+        blue_alliance: test_blue_alliance.clone()
+    };
+
+    // Create initial content state
+    let content_state = CompetitionAttributesContentState {
+        last_match: None,
+        next_match: Some(next_match.clone()),
+        team_next_match: Some(next_match.clone())
+    };
+
+    // Start the activity
+    let start_payload = json!({
+        "aps": {
+            "timestamp": chrono::Utc::now().timestamp(),
+            "event": "update",
+            "content-state": content_state
+        }
+    });
+
+    println!("Sending start notification, payload: {}", start_payload.to_string());
+
+    client.send_live_activity_notification(
+        device_token,
+        &start_payload,
+    ).await?;
+
+    // Wait before updating
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+    Ok(())
 }
