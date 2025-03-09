@@ -73,8 +73,10 @@ impl StateStore {
         let key_id = std::env::var("APPLE_KEY_ID").expect("APPLE_KEY_ID not set");
         let key_path = std::env::var("APPLE_KEY_PATH").expect("APPLE_KEY_PATH not set");
 
+        println!("Creating APNS client with team_id {}, key_id {}, key_path {}", team_id, key_id, key_path);
+
         let mut apns_client =
-            liveActivityApns::LiveActivityClient::new(&team_id, &key_id, &key_path, BUNDLE_ID)?;
+            liveActivityApns::LiveActivityClient::new(&team_id, &key_id, &key_path, BUNDLE_ID).expect("Unable to create APNS client");
 
         Ok(Self {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
@@ -295,8 +297,6 @@ async fn poll(state_store: StateStore) {
 
 #[tokio::main]
 async fn main() {
-    let token = std::env::var("ROBOTEVENTS_TOKEN").expect("ROBOTEVENTS_TOKEN not set");
-
     // let client = client::RobotEvents::new(token);
 
     let store = StateStore::new().unwrap();
@@ -320,7 +320,7 @@ async fn main() {
         .and_then(change_device);
 
     join!(
-        warp::serve(add_items.or(change_device)).run(([0, 0, 0, 0], 3030)),
+        warp::serve(add_items.or(change_device)).run(([0, 0, 0, 0], std::env::var("PORT").expect("PORT not set").parse().unwrap())),
         poll(store.clone()),
     );
 }
