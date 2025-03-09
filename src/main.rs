@@ -1,9 +1,9 @@
 mod competitionAttributes;
+mod liveActivityApns;
 
 use robotevents::client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::default::Default;
 use std::sync::Arc;
 use tokio::join;
 use tokio::sync::RwLock;
@@ -90,7 +90,7 @@ impl StateStore {
         }
 
         if let Some(old_competition_division) = old_competition_division {
-            let mut new_subscriptions = subscriptions.entry(old_competition_division).or_insert(Vec::new());
+            let new_subscriptions = subscriptions.entry(old_competition_division).or_insert(Vec::new());
             new_subscriptions.push((device.new_device_token.clone(), old_watch_team.unwrap()));
         }
     }
@@ -151,7 +151,7 @@ async fn poll(state_store: StateStore) {
 async fn main() {
     let token = std::env::var("ROBOTEVENTS_TOKEN").expect("ROBOTEVENTS_TOKEN not set");
 
-    let client = client::RobotEvents::new(token);
+    // let client = client::RobotEvents::new(token);
 
     let store = StateStore::new();
     let cloned_store = store.clone();
