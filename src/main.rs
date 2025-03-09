@@ -183,6 +183,8 @@ impl StateStore {
         // mutably get the apns client
         let mut apns_client = self.apns_client.write().await;
 
+        println!("updating all subscriptions");
+
         // for each competition division pair in the subscriptions hash map
         for (competition_division, devices) in subscriptions.iter() {
             // get the matches for the competition division pair
@@ -281,16 +283,13 @@ async fn get_matches(
 }
 
 async fn poll(state_store: StateStore) {
-
-    sleep(tokio::time::Duration::from_secs(10)).await;
-
     loop {
         // just print information about each subscription
         let start_time = tokio::time::Instant::now();
 
         state_store.update_all_subscriptions().await;
 
-        sleep_until(start_time + tokio::time::Duration::from_secs(3)).await;
+        sleep_until(start_time + tokio::time::Duration::from_secs(30)).await;
     }
 }
 

@@ -38,8 +38,9 @@ impl CompetitionAttributesContentState {
 
         for (index, m) in matches.iter().enumerate() {
             // Check if match has a score
-            if m.started.is_some() || m.alliances[0].score != 0 || m.alliances[1].score != 0 {
+            if m.alliances[0].score != 0 || m.alliances[1].score != 0 {
                 last_scored_index = index;
+                matches_skipped = true;
             } else {
                 matches_skipped = false;
             }
@@ -96,6 +97,13 @@ impl From<&Match> for DisplayMatch {
         let re = regex::Regex::new(r"[a-z#]").unwrap();
         let cleaned_name = re.replace_all(&m.name, "");
 
+        // if both scores are zero set them to None
+        let red_score = red_alliance.map(|a| a.score).unwrap_or(0);
+        let blue_score = blue_alliance.map(|a| a.score).unwrap_or(0);
+
+        let red_score_new = if red_score == 0 && blue_score == 0 { None } else { Some(red_score) };
+        let blue_score_new = if red_score == 0 && blue_score == 0 { None } else { Some(blue_score) };
+
         DisplayMatch {
             name: cleaned_name.to_string(),
             scheduled,
@@ -107,7 +115,7 @@ impl From<&Match> for DisplayMatch {
                 team2: red_alliance
                     .and_then(|a| a.teams.get(1))
                     .map(|t| t.team.name.to_string()),
-                score: red_alliance.map(|a| a.score),
+                score: red_score_new,
             },
             blue_alliance: Alliance {
                 team1: blue_alliance
@@ -116,7 +124,7 @@ impl From<&Match> for DisplayMatch {
                 team2: blue_alliance
                     .and_then(|a| a.teams.get(1))
                     .map(|t| t.team.name.to_string()),
-                score: blue_alliance.map(|a| a.score),
+                score: blue_score_new,
             },
         }
     }
