@@ -128,6 +128,8 @@ impl LiveActivityClient {
 
         let res = self.client.request(req).await?;
 
+        println!("Response: {:?}", res.status());
+
         if !res.status().is_success() {
             let body_bytes = hyper::body::to_bytes(res.into_body()).await?;
             let body_str = String::from_utf8_lossy(&body_bytes);
@@ -174,10 +176,7 @@ fn create_match_content_state(match_data: &Value, team_id: u32) -> Value {
     })
 }
 
-pub async fn test_live_activity(client: &mut LiveActivityClient) -> Result<(), Box<dyn std::error::Error>> {
-    // Device token from your iOS app
-    let device_token = "80b12b4212dc776f8429d22ec68e58e40d341c9242e74bf89e4939549382137e5d6d89c512fa1efcceaef559768b7d12f69bf618d570d7cc0b2de84fc6c2266017a97d3a518fca5160370fc188dbe139";
-
+pub async fn test_live_activity(client: &mut LiveActivityClient, device_token: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Create test match data
     let test_red_alliance = Alliance {
         team1: "R1".to_string(),
@@ -193,7 +192,7 @@ pub async fn test_live_activity(client: &mut LiveActivityClient) -> Result<(), B
 
     let next_match = DisplayMatch {
         name: "Q5".to_string(),
-        scheduled: Some(chrono::Utc::now() + chrono::Duration::minutes(15)),
+        scheduled: Some(SystemTime::from(chrono::Utc::now() + chrono::Duration::minutes(15))),
         start_time: None,
         red_alliance: test_red_alliance.clone(),
         blue_alliance: test_blue_alliance.clone()

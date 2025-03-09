@@ -1,12 +1,17 @@
+use std::time::SystemTime;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, TimestampSeconds};
 use robotevents::schema::{AllianceColor, Match};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CompetitionAttributesContentState {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_match: Option<DisplayMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_match: Option<DisplayMatch>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub team_next_match: Option<DisplayMatch>
 }
 
@@ -63,10 +68,10 @@ impl From<&Match> for DisplayMatch {
     fn from(m: &Match) -> Self {
         // Parse date strings into DateTime<Utc>
         let scheduled = m.scheduled.as_ref()
-            .and_then(|s| datetime_from_string(s));
+            .and_then(|s| datetime_from_string(s).map(|dt| dt.into()));
 
         let start_time = m.started.as_ref()
-            .and_then(|s| datetime_from_string(s));
+            .and_then(|s| datetime_from_string(s).map(|dt| dt.into()));
 
         // Find red alliance
         let red_alliance = m.alliances.iter()
@@ -113,12 +118,17 @@ fn datetime_from_string(date_str: &str) -> Option<DateTime<Utc>> {
     None
 }
 
+#[serde_as]
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayMatch {
     pub name: String,
-    pub scheduled: Option<DateTime<Utc>>,
-    pub start_time: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<TimestampSeconds<f64>>")]
+    pub scheduled: Option<SystemTime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde_as(as = "Option<TimestampSeconds<f64>>")]
+    pub start_time: Option<SystemTime>,
     pub red_alliance: Alliance,
     pub blue_alliance: Alliance,
 }
@@ -130,6 +140,3 @@ pub struct Alliance {
     pub team2: Option<String>,
     pub score: Option<i32>
 }
-
-
-
