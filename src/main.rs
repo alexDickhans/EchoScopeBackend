@@ -54,14 +54,29 @@ impl CompetitionDivisionPair {
 struct StateStore {
     subscriptions: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<(String, u32)>>>>,
     matches: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<robotevents::schema::Match>>>>,
+    apns_client: Arc<RwLock<liveActivityApns::LiveActivityClient>>,
 }
 
 impl StateStore {
-    fn new() -> Self {
-        Self {
+    fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        let team_id = std::env::var("APPLE_TEAM_ID").expect("APPLE_TEAM_ID not set");
+        let key_id = std::env::var("APPLE_KEY_ID").expect("APPLE_KEY_ID not set");
+        let key_path = std::env::var("APPLE_KEY_PATH").expect("APPLE_KEY_PATH not set");
+
+        let mut apns_client = liveActivityApns::LiveActivityClient::new(
+            &team_id,
+            &key_id,
+            &key_path,
+            BUNDLE_ID
+        )?;
+
+        println!("Created APNS client, current authentication token: {}", apns_client.get_token().unwrap_or("None".to_string()));
+
+        Ok(Self {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             matches: Arc::new(RwLock::new(HashMap::new())),
-        }
+            apns_client: Arc::new(RwLock::new(apns_client)),
+        })
     }
 
     async fn add_subscription_from_device(&self, device: DeviceSubscription) {
@@ -153,7 +168,7 @@ async fn main() {
 
     // let client = client::RobotEvents::new(token);
 
-    let store = StateStore::new();
+    let store = StateStore::new().unwrap();
     let cloned_store = store.clone();
     let store_filter = warp::any().map(move || cloned_store.clone());
 

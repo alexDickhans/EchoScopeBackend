@@ -28,7 +28,6 @@ pub struct LiveActivityClient {
 struct Claims {
     iss: String,
     iat: u64,
-    exp: u64,
 }
 
 impl LiveActivityClient {
@@ -55,18 +54,25 @@ impl LiveActivityClient {
 
     fn generate_token(&self) -> Result<String, Box<dyn Error>> {
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-        let expiration = now + self.token_expiration.as_secs();
 
+        // Use a simplified claims structure that matches Apple's requirements
         let claims = Claims {
             iss: self.team_id.clone(),
             iat: now,
-            exp: expiration,
         };
 
+        // Configure the header with required fields for APNs
         let mut header = Header::new(Algorithm::ES256);
         header.kid = Some(self.key_id.clone());
+        // Remove typ field by using a custom header
+        header.typ = None;
 
-        let encoding_key = EncodingKey::from_ec_pem(&self.private_key)?;
+        // Apple uses PKCS#8 keys, so ensure proper reading
+        let key_content = String::from_utf8_lossy(&self.private_key);
+
+        // Use direct PEM key loading which handles the parsing correctly
+        let encoding_key = EncodingKey::from_ec_pem(key_content.as_bytes())?;
+
         let token = encode(&header, &claims, &encoding_key)?;
         Ok(token)
     }

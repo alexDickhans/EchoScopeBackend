@@ -6,6 +6,7 @@ version = 4
 name = "EchoScopeBackend"
 version = "0.1.0"
 dependencies = [
+ "base64 0.13.1",
  "chrono",
  "hyper",
  "hyper-tls",
