@@ -7,5 +7,6 @@ edition = "2021"
 robotevents = "0.6.0"
 warp = "0.3.7"
 tokio = { version = "1.43.0", features = ["rt", "rt-multi-thread", "macros"] }
-a2 = "0.10.0"
 serde = { version = "1.0.218", features = ["derive"] }
+chrono = { version = "0.4.40", features = ["serde"] }
+hyper = "1.6.0"

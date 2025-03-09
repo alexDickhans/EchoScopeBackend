@@ -141,7 +141,9 @@ async fn poll(state_store: StateStore) {
             println!("Competition {:?}: {:?}", competition_id, devices);
         }
 
-        sleep_until(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3)).await;
+
+
+        sleep_until(tokio::time::Instant::now() + tokio::time::Duration::from_secs(30)).await;
     }
 }
 
