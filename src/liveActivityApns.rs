@@ -143,7 +143,7 @@ impl LiveActivityClient {
         &mut self,
         device_token: &str,
         match_info: &Value,
-        team_id: u32,
+        team_id: i32,
     ) -> Result<(), Box<dyn Error>> {
         let content_state = create_match_content_state(match_info, team_id);
 
@@ -163,7 +163,7 @@ impl LiveActivityClient {
 }
 
 // Helper function to create content state for match updates
-fn create_match_content_state(match_data: &Value, team_id: u32) -> Value {
+fn create_match_content_state(match_data: &Value, team_id: i32) -> Value {
     // Extract relevant information from match_data
     // This should be customized based on your match data structure
     json!({

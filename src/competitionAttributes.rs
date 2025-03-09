@@ -15,10 +15,22 @@ pub struct CompetitionAttributesContentState {
     pub team_next_match: Option<DisplayMatch>
 }
 
-impl From<(Vec<Match>, String)> for CompetitionAttributesContentState {
-    fn from(value: (Vec<Match>, String)) -> Self {
-        let (matches, team_name) = value;
+impl CompetitionAttributesContentState {
+    pub fn from_matchlist(unsorted_matches: &[Match], team_name: &str) -> Self {
         let team_name = team_name.to_uppercase();
+
+        let mut matches= unsorted_matches.clone().to_vec();
+
+        matches.sort_by(|x, x1| {
+            let mut round_sum_x = x.round as f32;
+            round_sum_x = if round_sum_x == 6.0 { 2.5 } else { round_sum_x };
+            round_sum_x = round_sum_x * 1000.0 + x.matchnum as f32;
+            let mut round_sum_x1 = x1.round as f32;
+            round_sum_x1 = if round_sum_x1 == 6.0 { 2.5 } else { round_sum_x1 };
+            round_sum_x1 = round_sum_x1 * 1000.0 + x1.matchnum as f32;
+            round_sum_x.total_cmp(&round_sum_x1)
+        });
+
 
         let mut last_scored_index = 0;
         let mut team_next_match = 0;
@@ -26,7 +38,7 @@ impl From<(Vec<Match>, String)> for CompetitionAttributesContentState {
 
         for (index, m) in matches.iter().enumerate() {
             // Check if match has a score
-            if m.scored {
+            if m.started.is_some() || m.alliances[0].score != 0 || m.alliances[1].score != 0 {
                 last_scored_index = index;
             } else {
                 matches_skipped = false;
@@ -81,8 +93,11 @@ impl From<&Match> for DisplayMatch {
         let blue_alliance = m.alliances.iter()
             .find(|a| matches!(a.color, AllianceColor::Blue));
 
+        let re = regex::Regex::new(r"[a-z#]").unwrap();
+        let cleaned_name = re.replace_all(&m.name, "");
+
         DisplayMatch {
-            name: format!("{} {}", m.round.to_string(), m.instance),
+            name: cleaned_name.to_string(),
             scheduled,
             start_time,
             red_alliance: Alliance {
@@ -119,7 +134,7 @@ fn datetime_from_string(date_str: &str) -> Option<DateTime<Utc>> {
 }
 
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DisplayMatch {
     pub name: String,
@@ -133,7 +148,7 @@ pub struct DisplayMatch {
     pub blue_alliance: Alliance,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Alliance {
     pub team1: String,

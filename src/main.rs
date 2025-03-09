@@ -1,23 +1,26 @@
 mod competitionAttributes;
 mod liveActivityApns;
 
-use robotevents::client;
+use robotevents::{client, RobotEvents};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
+use robotevents::query::{DivisionMatchesQuery, PaginatedQuery};
+use serde_json::json;
 use tokio::join;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, sleep_until};
 use warp::{http, Filter};
+use crate::competitionAttributes::CompetitionAttributesContentState;
 
 // add a constant for the bundle id
 const BUNDLE_ID: &str = "net.dickhans.EchoPulse";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct DeviceSubscription {
-    competition_id: u32,
-    division_id: u32,
+    competition_id: i32,
+    division_id: i32,
     device_token: String,
     watch_team: String,
 }
@@ -30,8 +33,8 @@ struct DeviceSubscriptionChangeRequest {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Hash, Eq)]
 struct CompetitionDivisionPair {
-    competition_id: u32,
-    division_id: u32,
+    competition_id: i32,
+    division_id: i32,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -41,7 +44,7 @@ struct TeamTokenPair {
 }
 
 impl CompetitionDivisionPair {
-    fn new(competition_id: u32, division_id: u32) -> Self {
+    fn new(competition_id: i32, division_id: i32) -> Self {
         Self {
             competition_id,
             division_id,
@@ -61,6 +64,7 @@ struct StateStore {
     subscriptions: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<TeamTokenPair>>>>,
     matches: Arc<RwLock<HashMap<CompetitionDivisionPair, Vec<robotevents::schema::Match>>>>,
     apns_client: Arc<RwLock<liveActivityApns::LiveActivityClient>>,
+    robot_events_client: Arc<RwLock<RobotEvents>>,
 }
 
 impl StateStore {
@@ -76,6 +80,9 @@ impl StateStore {
             subscriptions: Arc::new(RwLock::new(HashMap::new())),
             matches: Arc::new(RwLock::new(HashMap::new())),
             apns_client: Arc::new(RwLock::new(apns_client)),
+            robot_events_client: Arc::new(RwLock::new(client::RobotEvents::new(
+                std::env::var("ROBOTEVENTS_TOKEN").expect("ROBOTEVENTS_TOKEN not set"),
+            ))),
         })
     }
 
@@ -142,6 +149,12 @@ impl StateStore {
             }
         }
 
+        if device.new_device_token.is_empty() {
+            println!("Removing device with token {}", device.old_device_token);
+            Self::remove_empty_subscriptions(&mut *self.subscriptions.write().await);
+            return;
+        }
+
         if let Some(old_competition_division) = old_competition_division {
             let new_subscriptions = subscriptions
                 .entry(old_competition_division)
@@ -150,6 +163,61 @@ impl StateStore {
                 device_token: device.new_device_token.clone(),
                 team_name: old_watch_team.unwrap(),
             });
+        }
+    }
+
+    fn remove_empty_subscriptions(subscriptions: &mut HashMap<CompetitionDivisionPair, Vec<TeamTokenPair>>) {
+        subscriptions.retain(|_, v| !v.is_empty());
+    }
+
+    async fn update_all_subscriptions(&self) {
+        // mutably get the current match hash map
+        let mut matches = self.matches.write().await;
+
+        // get the current subscriptions hash map
+        let subscriptions = self.subscriptions.read().await;
+
+        // mutably get the robot events client
+        let robot_events_client = self.robot_events_client.write().await;
+
+        // mutably get the apns client
+        let mut apns_client = self.apns_client.write().await;
+
+        // for each competition division pair in the subscriptions hash map
+        for (competition_division, devices) in subscriptions.iter() {
+            // get the matches for the competition division pair
+            if let Some(new_matches) = get_matches(competition_division, &robot_events_client).await {
+                // if the matches don't match what is in the matches hash map, update the matches hash map and send a notification
+                if new_matches != *matches.get(competition_division).unwrap_or(&Vec::new()) {
+                    matches.insert(competition_division.clone(), new_matches.clone());
+
+                    // for each device in the devices vector
+                    for TeamTokenPair {
+                        team_name,
+                        device_token,
+                    } in devices.iter()
+                    {
+                        let content_state = CompetitionAttributesContentState::from_matchlist(&new_matches, team_name);
+
+                        let payload = json!({
+                        "aps": {
+                            "timestamp": chrono::Utc::now().timestamp(),
+                            "event": "update",
+                            "content-state": content_state
+                        }
+                    });
+
+                        println!("Sending notification to device {}, with payload {}", device_token, payload);
+
+                        // send a notification to the device
+                        apns_client.send_live_activity_notification(device_token, &payload).await.expect("Unable to send notification");
+                    }
+                } else {
+                    println!("No new matches found for competition division pair {:?}", competition_division);
+                }
+            } else {
+                println!("ERROR: No matches found for competition division pair {:?}", competition_division);
+            }
         }
     }
 }
@@ -178,6 +246,16 @@ async fn change_device(
     ))
 }
 
+async fn remove_device(
+    device: DeviceSubscription,
+    state_store: StateStore,
+) -> Result<impl warp::Reply, warp::Rejection> {
+    Ok(warp::reply::with_status(
+        "Removed device",
+        http::StatusCode::OK,
+    ))
+}
+
 fn json_body_new_device(
 ) -> impl Filter<Extract = (DeviceSubscription,), Error = warp::Rejection> + Clone {
     // When accepting a body, we want a JSON body
@@ -192,21 +270,27 @@ fn json_body_change_device(
     warp::body::content_length_limit(1024 * 16).and(warp::body::json())
 }
 
+/// get all the matches from a competition division pair
+async fn get_matches(
+    competition_division: &CompetitionDivisionPair,
+    robot_events_client: &RobotEvents
+) -> Option<Vec<robotevents::schema::Match>> {
+    let matches = robot_events_client.event_division_matches(competition_division.competition_id, competition_division.division_id, DivisionMatchesQuery::new().per_page(250)).await;
+
+    Some(matches.ok()?.data)
+}
+
 async fn poll(state_store: StateStore) {
+
+    sleep(tokio::time::Duration::from_secs(10)).await;
+
     loop {
         // just print information about each subscription
-        let subscriptions = state_store.subscriptions.read().await;
+        let start_time = tokio::time::Instant::now();
 
-        println!("Subscriptions:");
+        state_store.update_all_subscriptions().await;
 
-        for (competition_id, devices) in subscriptions.iter() {
-            println!("Competition {:?}: {:?}", competition_id, devices);
-        }
-
-        // test push notifications
-        state_store.test_push_notifs().await;
-
-        sleep_until(tokio::time::Instant::now() + tokio::time::Duration::from_secs(10)).await;
+        sleep_until(start_time + tokio::time::Duration::from_secs(3)).await;
     }
 }
 
